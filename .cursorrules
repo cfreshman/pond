@@ -1,0 +1,13 @@
+new project
+html + javascript
+single page app
+create index.html
+canvas covers full screen
+style: minimal, no resets
+no libraries
+set up canvas, animation loop
+domain: pond.graphics
+description: top-down autonomous pond simulation
+initialize git
+push to github
+set up github pages

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>pond.graphics</title>
+    <style>
+        canvas { position: fixed; top: 0; left: 0 }
+    </style>
+</head>
+<body>
+    <canvas></canvas>
+    <script>
+        const canvas = document.querySelector('canvas')
+        const ctx = canvas.getContext('2d')
+
+        function resize() {
+            canvas.width = window.innerWidth
+            canvas.height = window.innerHeight
+        }
+
+        window.addEventListener('resize', resize)
+        resize()
+
+        function draw() {
+            requestAnimationFrame(draw)
+        }
+
+        draw()
+    </script>
+</body>
+</html> 
