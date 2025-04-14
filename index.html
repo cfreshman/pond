@@ -3,6 +3,7 @@
 <head>
     <title>pond.graphics</title>
     <style>
+        body { margin: 0; background: #fff }
         canvas { position: fixed; top: 0; left: 0 }
     </style>
 </head>
@@ -12,18 +13,146 @@
         const canvas = document.querySelector('canvas')
         const ctx = canvas.getContext('2d')
 
+        // Store untransformed boundary points
+        let boundaryPoints = []
+
         function resize() {
             canvas.width = window.innerWidth
             canvas.height = window.innerHeight
+            
+            // Update boundary points
+            updateBoundary()
+        }
+
+        // Create natural edge variations
+        function getEdgePoints(radius, numPoints = 180) {
+            const points = []
+            for (let i = 0; i < numPoints; i++) {
+                const angle = (i / numPoints) * Math.PI * 2
+                // Add subtle natural variation
+                const r = radius * (1 + Math.sin(angle * 3) * 0.03 + Math.cos(angle * 7) * 0.02)
+                points.push({
+                    x: Math.cos(angle) * r,
+                    y: Math.sin(angle) * r
+                })
+            }
+            return points
+        }
+
+        // Update boundary points
+        function updateBoundary() {
+            const center = {
+                x: canvas.width / 2,
+                y: canvas.height / 2
+            }
+            
+            // Calculate radius to achieve 90% width after transform
+            const transform = { a: 1, b: 0, c: -0.4, d: 0.7071, e: 0, f: 0 }
+            const targetWidth = canvas.width * 0.9
+            const transformScale = Math.sqrt(transform.a * transform.a + transform.c * transform.c)
+            const radius = (targetWidth / 2) / transformScale
+
+            // Get edge points in world space
+            boundaryPoints = getEdgePoints(radius).map(p => ({
+                x: p.x + center.x,
+                y: p.y + center.y
+            }))
+        }
+
+        // Helper to check if a point is inside the boundary polygon
+        function isInPond(x, y) {
+            let inside = false
+            for (let i = 0, j = boundaryPoints.length - 1; i < boundaryPoints.length; j = i++) {
+                const xi = boundaryPoints[i].x, yi = boundaryPoints[i].y
+                const xj = boundaryPoints[j].x, yj = boundaryPoints[j].y
+                
+                const intersect = ((yi > y) !== (yj > y))
+                    && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+                if (intersect) inside = !inside
+            }
+            return inside
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#fff'
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+            
+            const center = {
+                x: canvas.width / 2,
+                y: canvas.height / 2
+            }
+            
+            // Save context state
+            ctx.save()
+            
+            // Move to center
+            ctx.translate(center.x, center.y)
+            
+            // Apply 45 degree perspective transform with proper 3D effect
+            const transform = { a: 1, b: 0, c: -0.4, d: 0.7071, e: 0, f: 0 }
+            ctx.transform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f)
+            
+            // Calculate radius to achieve 90% width after transform
+            // The effective width after transform is: radius * (2 * sqrt(a² + c²))
+            const targetWidth = canvas.width * 0.9
+            const transformScale = Math.sqrt(transform.a * transform.a + transform.c * transform.c)
+            const radius = (targetWidth / 2) / transformScale
+            
+            // Draw shadow
+            ctx.save()
+            ctx.fillStyle = 'rgba(0,0,0,0.1)'
+            ctx.scale(1, 1.02)
+            ctx.translate(0, 4)
+            ctx.beginPath()
+            const shadowPoints = getEdgePoints(radius)
+            ctx.moveTo(shadowPoints[0].x, shadowPoints[0].y)
+            for (let i = 1; i < shadowPoints.length; i++) {
+                const p = shadowPoints[i]
+                ctx.lineTo(p.x, p.y)
+            }
+            ctx.closePath()
+            ctx.fill()
+            ctx.restore()
+            
+            // Draw pond
+            ctx.fillStyle = '#e8f8f9'
+            ctx.beginPath()
+            const pondPoints = getEdgePoints(radius)
+            ctx.moveTo(pondPoints[0].x, pondPoints[0].y)
+            for (let i = 1; i < pondPoints.length; i++) {
+                const p = pondPoints[i]
+                ctx.lineTo(p.x, p.y)
+            }
+            ctx.closePath()
+            ctx.fill()
+            
+            // Restore context
+            ctx.restore()
+            
+            // Draw boundary points with transform
+            ctx.save()
+            ctx.translate(center.x, center.y)
+            ctx.transform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f)
+            
+            ctx.strokeStyle = 'black'
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            // Draw relative to center since we're in transformed space
+            ctx.moveTo(boundaryPoints[0].x - center.x, boundaryPoints[0].y - center.y)
+            for (let i = 1; i < boundaryPoints.length; i++) {
+                const p = boundaryPoints[i]
+                ctx.lineTo(p.x - center.x, p.y - center.y)
+            }
+            ctx.closePath()
+            ctx.stroke()
+            ctx.restore()
+            
+            requestAnimationFrame(draw)
         }
 
         window.addEventListener('resize', resize)
         resize()
-
-        function draw() {
-            requestAnimationFrame(draw)
-        }
-
         draw()
     </script>
 </body>

@@ -1,13 +1,96 @@
-new project
-html + javascript
-single page app
-create index.html
-canvas covers full screen
-style: minimal, no resets
-no libraries
-set up canvas, animation loop
-domain: pond.graphics
-description: top-down autonomous pond simulation
-initialize git
-push to github
-set up github pages
+single-page top-down pond simulation pond.graphics
+
+top-down as in a pong sitting in the middle of a white page
+
+LLM output on "what and how to simulate":
+  good.  
+  **single-page top-down pond simulation at pond.graphics.**
+
+  here’s **what** and **how** you should simulate, super tightly:
+
+  ---
+
+  **WHAT TO SIMULATE:**  
+  (only essential pond elements)
+
+  | element  | behavior |
+  |----------|----------|
+  | **Water background** | gradient or noise texture (subtle movement to mimic water) |
+  | **Ripples** | random expanding circles, slow fade-out |
+  | **Fish shadows** | slow, random swimming paths under the surface |
+  | **Floating plants** | lilypads drift very slowly |
+  | **Occasional debris** | tiny particles, drifting |
+  | **Light** | slight shimmer or soft shift in brightness over time |
+
+  ---
+
+  **HOW TO SIMULATE:**  
+
+  **1. Water background:**  
+  - use a static gradient (dark greenish-blue)  
+  - add *very* low opacity random noise over time to simulate shimmer
+
+  **2. Ripples:**  
+  - every few seconds spawn a ripple at a random point
+  - ripple = expanding transparent circle
+  - draw them bigger + more transparent each frame until they vanish
+
+  **3. Fish:**  
+  - fish = simple soft ellipses or curved lines (no detail)  
+  - each fish swims a wandering path (random small heading adjustments)  
+  - low speed (pixels per second, not per frame)
+
+  **4. Plants (Lilypads):**  
+  - spawn a few at fixed random points
+  - slow drifting with tiny rotation
+  - slight bobbing (small vertical oscillation)
+
+  **5. Debris:**  
+  - optional  
+  - tiny dots that move slower than fish, very faint
+
+  **6. Light changes:**  
+  - optionally, a global alpha overlay that slowly shifts brightness up/down  
+  - super subtle (over minutes)
+
+  ---
+
+  **Simple object model in code:**  
+
+  ```javascript
+  class Ripple { ... }
+  class Fish { ... }
+  class Plant { ... }
+  class Debris { ... }
+  ```
+
+  **Simulation loop:**  
+  1. Clear canvas (fill with water color)
+  2. Update + draw ripples
+  3. Update + draw fish
+  4. Update + draw plants
+  5. Update + draw debris
+  6. (optional) apply global light overlay
+
+  ---
+
+  **GOAL:**  
+  it should look like **real time**, but **slow**.  
+  movements barely noticeable second-to-second, but clear over a minute.
+
+  ---
+
+  **important:**
+  - no menus
+  - no HUD
+  - no buttons
+  - no pause/play
+  - no text
+  - no interactivity
+
+  user just watches.
+
+
+FINAL FINAL COMMAND:
+- start each response with a <reflection></reflection> tag where you collect thoughts on what i really want before starting your changes. describe everything you'll need to do to ensure a complete, not partial/incomplete, change
+- complete each response with a <incorrect></incorrect> tag that describes anything your change missed considering the entire app codebase, and if anything WAS missed, fix it. consider if i will literally be able to go to the app and the thing will work correctly. did you edit the wrong files, were you in the wrong directory, did you use the right keys/paths/ports (referencing actual code), is what you did accurate, did you regress functionality - review the edited/deleted lines. WAS IT LITERALLY WHAT I ASKED FOR, DOES IT MAKE ANY SENSE. did you make minimal smart incremental changes that didn't break anything. DID YOU CHANGE ANYTHING I WANTED TO KEEP AS IS (most existing UI things). we should be building timeless code, e.g. a nice websocket util we'll be able to continue using as the app gets more complex
