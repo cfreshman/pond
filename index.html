@@ -57,6 +57,21 @@
                 // Size distribution
                 const rand = Math.random()
                 this.size = MIN_FISH_SIZE + (MAX_FISH_SIZE - MIN_FISH_SIZE) * Math.pow(rand, 1.5)
+                
+                // Swimming parameters
+                this.targetAngle = Math.atan2(this.vel.y, this.vel.x)
+                this.currentAngle = this.targetAngle
+                this.turnSpeed = 0.1 // radians per frame
+                this.maxTurnSpeed = 0.2 // max radians per frame
+                
+                // Natural swimming motion
+                this.swimPhase = Math.random() * Math.PI * 2
+                this.swimFrequency = 0.05 + Math.random() * 0.02 // Slight variation between fish
+                this.speedVariation = 0.15 // 15% speed variation
+                
+                // Wandering behavior
+                this.wanderAngle = Math.random() * Math.PI * 2
+                this.wanderStrength = 0.02
             }
             
             // Get nearest boundary point and normal
@@ -128,9 +143,35 @@
                 return { distance: minDist, normal: nearestNormal, point: nearestPoint, isVertex }
             }
             
+            updateSwimming() {
+                // Update swimming phase
+                this.swimPhase += this.swimFrequency
+                
+                // Calculate speed variation based on swimming motion
+                const speedFactor = 1 + Math.sin(this.swimPhase) * this.speedVariation
+                
+                // Update wandering
+                this.wanderAngle += (Math.random() - 0.5) * 0.1
+                const wanderX = Math.cos(this.wanderAngle) * this.wanderStrength
+                const wanderY = Math.sin(this.wanderAngle) * this.wanderStrength
+                
+                // Smoothly turn towards target angle
+                const angleDiff = ((this.targetAngle - this.currentAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI
+                const turn = Math.max(-this.maxTurnSpeed, Math.min(this.maxTurnSpeed, angleDiff * this.turnSpeed))
+                this.currentAngle += turn
+                
+                // Update velocity based on current angle and speed
+                const speed = FISH_SPEED * speedFactor
+                this.vel.x = Math.cos(this.currentAngle) * speed + wanderX
+                this.vel.y = Math.sin(this.currentAngle) * speed + wanderY
+            }
+            
             update() {
                 // Store old position
                 const oldPos = { x: this.pos.x, y: this.pos.y }
+                
+                // Update swimming motion
+                this.updateSwimming()
                 
                 // Update position
                 this.pos.x += this.vel.x
@@ -139,55 +180,61 @@
                 // Get nearest boundary info
                 const boundary = this.getNearestBoundary()
                 
-                // Check if fish circle intersects with boundary
+                // Start turning away before actual collision
+                const turnDistance = this.size * 3
+                if (boundary.distance < turnDistance) {
+                    // Calculate ideal escape angle
+                    const escapeAngle = Math.atan2(boundary.normal.y, boundary.normal.x)
+                    
+                    // Blend between current angle and escape angle based on distance
+                    const blend = Math.max(0, Math.min(1, (turnDistance - boundary.distance) / turnDistance))
+                    this.targetAngle = this.currentAngle * (1 - blend) + escapeAngle * blend
+                    
+                    // Increase turn speed when very close
+                    this.maxTurnSpeed = 0.2 + Math.max(0, (this.size - boundary.distance) / this.size) * 0.3
+                } else {
+                    // Reset turn speed when safe
+                    this.maxTurnSpeed = 0.2
+                }
+                
+                // Still check for actual collisions as safety
                 if (boundary.distance < this.size) {
                     // Move back to old position
                     this.pos = oldPos
                     
-                    // Get boundary info at old position for more accurate reflection
+                    // Get boundary info at old position
                     const oldBoundary = this.getNearestBoundary()
                     
-                    // Calculate reflection
-                    const normal = oldBoundary.normal
-                    const dot = this.vel.x * normal.x + this.vel.y * normal.y
-                    
-                    // Reflect velocity (v = v - 2(v·n)n)
-                    this.vel.x = this.vel.x - 2 * dot * normal.x
-                    this.vel.y = this.vel.y - 2 * dot * normal.y
-                    
-                    // Ensure constant speed
-                    const mag = Math.hypot(this.vel.x, this.vel.y)
-                    this.vel.x = (this.vel.x / mag) * FISH_SPEED
-                    this.vel.y = (this.vel.y / mag) * FISH_SPEED
+                    // Set target angle to boundary normal
+                    this.targetAngle = Math.atan2(oldBoundary.normal.y, oldBoundary.normal.x)
                     
                     // Position fish at boundary + size distance along normal
-                    const safetyMargin = 1.01 // Tiny margin to prevent sticking
+                    const safetyMargin = 1.01
                     this.pos.x = oldBoundary.point.x + oldBoundary.normal.x * (this.size * safetyMargin)
                     this.pos.y = oldBoundary.point.y + oldBoundary.normal.y * (this.size * safetyMargin)
-                    
-                    // Apply new velocity
-                    this.pos.x += this.vel.x
-                    this.pos.y += this.vel.y
                 }
             }
             
             draw(ctx) {
                 ctx.save()
                 ctx.translate(this.pos.x, this.pos.y)
-                ctx.rotate(Math.atan2(this.vel.y, this.vel.x))
+                ctx.rotate(this.currentAngle)
                 
                 // Draw single teardrop shape
                 ctx.fillStyle = '#000'
                 ctx.beginPath()
                 ctx.moveTo(-this.size, 0)
                 
-                // Teardrop curve (reversed)
+                // Add slight undulation to the body based on swim phase
+                const undulation = Math.sin(this.swimPhase) * 0.2
+                
+                // Teardrop curve with undulation
                 ctx.quadraticCurveTo(
-                    this.size * 0.5, this.size * 0.5,
+                    this.size * 0.5, this.size * (0.5 + undulation),
                     this.size, 0
                 )
                 ctx.quadraticCurveTo(
-                    this.size * 0.5, -this.size * 0.5,
+                    this.size * 0.5, this.size * (-0.5 + undulation),
                     -this.size, 0
                 )
                 
