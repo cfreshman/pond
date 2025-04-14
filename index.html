@@ -36,8 +36,8 @@
         const FIXED_DT = 1/60 // 60hz physics
         
         // Fish parameters
-        const FISH_COUNT = 100
-        const BASE_FISH_LENGTH = 3 // base length in meters
+        const FISH_COUNT = 125
+        const BASE_FISH_LENGTH = 3.25 // base length in meters
         const FISH_LENGTH = METERS_TO_PIXELS(BASE_FISH_LENGTH)
         const MIN_FISH_SIZE = FISH_LENGTH * 0.3  // Much smaller minimum
         const MAX_FISH_SIZE = FISH_LENGTH * 2.0  // Much larger maximum
@@ -47,15 +47,16 @@
         let fishes = []
         
         class Fish {
-            constructor(x, y) {
+            constructor(x, y, initialAngle) {
                 this.pos = { x, y }
+                
+                // Set initial velocity based on provided angle instead of random
+                this.currentAngle = initialAngle + (Math.random() - 0.5) * Math.PI * 0.2 // Small random variation
+                this.targetAngle = this.currentAngle
                 this.vel = {
-                    x: Math.random() * 2 - 1,
-                    y: Math.random() * 2 - 1
+                    x: Math.cos(this.currentAngle) * FISH_SPEED,
+                    y: Math.sin(this.currentAngle) * FISH_SPEED
                 }
-                const mag = Math.hypot(this.vel.x, this.vel.y)
-                this.vel.x = (this.vel.x / mag) * FISH_SPEED
-                this.vel.y = (this.vel.y / mag) * FISH_SPEED
                 
                 // Size distribution using exponential scaling
                 const rand = Math.random()
@@ -65,10 +66,6 @@
                 // Apply power scaling for even more large fish
                 const finalScale = Math.pow(normalizedExp, 2)
                 this.size = MIN_FISH_SIZE + (MAX_FISH_SIZE - MIN_FISH_SIZE) * finalScale
-                
-                // Swimming parameters
-                this.targetAngle = Math.atan2(this.vel.y, this.vel.x)
-                this.currentAngle = this.targetAngle
                 
                 // Calculate size ratio for scaling speeds and turns
                 const sizeRatio = (this.size - MIN_FISH_SIZE) / (MAX_FISH_SIZE - MIN_FISH_SIZE)
@@ -170,10 +167,10 @@
                 return { distance: minDist, normal: nearestNormal, point: nearestPoint, isVertex }
             }
             
-            updateSchooling() {
+            updateSchooling(dt) {
                 // Get boundary info for edge avoidance priority
                 const boundary = this.getNearestBoundary()
-                const turnDistance = this.size * 4
+                const turnDistance = METERS_TO_PIXELS(BASE_FISH_LENGTH * 4)
                 const nearBoundary = boundary.distance < turnDistance
                 
                 // Handle edge cooldown
@@ -185,8 +182,8 @@
                     // Stronger influence when cooldown is high
                     this.targetAngle = this.currentAngle * (1 - cooldownFactor) + escapeAngle * cooldownFactor
                     
-                    // Reduce cooldown
-                    this.edgeCooldown--
+                    // Reduce cooldown (scale by dt)
+                    this.edgeCooldown = Math.max(0, this.edgeCooldown - dt)
                     return
                 }
                 
@@ -308,7 +305,7 @@
                 const wanderY = Math.sin(this.wanderAngle) * this.wanderStrength
                 
                 // Update schooling behavior
-                this.updateSchooling()
+                this.updateSchooling(dt)
                 
                 // Smoothly turn towards target angle (scale by dt)
                 const angleDiff = ((this.targetAngle - this.currentAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI
@@ -428,22 +425,25 @@
                         const angle = startAngle + (Math.random() - 0.5) * angleSpread
                         const pondRadius = Math.min(canvas.width, canvas.height * PERSPECTIVE) * 0.45
                         const minRadius = pondRadius * 0.2
-                        const maxRadius = pondRadius * 0.5
+                        const maxRadius = pondRadius * 0.4  // Reduced from 0.5 to keep schools more compact
                         const r = minRadius + Math.random() * (maxRadius - minRadius)
                         
                         x = canvas.width/2 + Math.cos(angle) * r
                         y = canvas.height/2 + Math.sin(angle) * r
                         
-                        fish = new Fish(x, y)
-                        fish.schoolId = schoolId
+                        // Calculate angle towards center of school area
+                        const schoolCenterAngle = startAngle + (angleSpread / 2)
+                        const schoolCenterX = canvas.width/2 + Math.cos(schoolCenterAngle) * (minRadius + maxRadius) / 2
+                        const schoolCenterY = canvas.height/2 + Math.sin(schoolCenterAngle) * (minRadius + maxRadius) / 2
                         
-                        // Set initial direction towards center of school area
-                        const centerAngle = startAngle + (angleSpread / 2)
-                        fish.targetAngle = centerAngle
-                        fish.currentAngle = centerAngle
-                        const speed = fish.baseSpeed
-                        fish.vel.x = Math.cos(centerAngle) * speed
-                        fish.vel.y = Math.sin(centerAngle) * speed
+                        // Initial angle points roughly towards school center with some variation
+                        const towardsCenterAngle = Math.atan2(
+                            schoolCenterY - y,
+                            schoolCenterX - x
+                        )
+                        
+                        fish = new Fish(x, y, towardsCenterAngle)
+                        fish.schoolId = schoolId
                         
                     } while (!isInPond(x, y))
                     
