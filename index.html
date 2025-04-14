@@ -60,8 +60,8 @@
                 // Size distribution using exponential scaling
                 const rand = Math.random()
                 // Use exponential curve to heavily favor large sizes
-                const expScale = Math.exp(rand * 3) - 1  // 0 to e³-1
-                const normalizedExp = expScale / (Math.E ** 3 - 1)  // Normalize to 0-1
+                const expScale = Math.exp(rand * 10) - 1  // 0 to e³-1
+                const normalizedExp = expScale / (Math.E ** 10 - 1)  // Normalize to 0-1
                 // Apply power scaling for even more large fish
                 const finalScale = Math.pow(normalizedExp, 2)
                 this.size = MIN_FISH_SIZE + (MAX_FISH_SIZE - MIN_FISH_SIZE) * finalScale
@@ -69,8 +69,13 @@
                 // Swimming parameters
                 this.targetAngle = Math.atan2(this.vel.y, this.vel.x)
                 this.currentAngle = this.targetAngle
-                this.turnSpeed = 0.1
-                this.maxTurnSpeed = 0.2
+                
+                // Calculate size ratio for scaling speeds and turns
+                const sizeRatio = (this.size - MIN_FISH_SIZE) / (MAX_FISH_SIZE - MIN_FISH_SIZE)
+                
+                // Scale turn speeds based on size - larger fish turn slower
+                this.turnSpeed = 0.1 * (1 - sizeRatio * 0.6)  // Scale down to 40% for largest fish
+                this.maxTurnSpeed = 0.2 * (1 - sizeRatio * 0.6)
                 
                 // Natural swimming motion
                 this.swimPhase = Math.random() * Math.PI * 2
@@ -93,7 +98,6 @@
                 this.maxEdgeCooldown = 60 // frames
                 
                 // Calculate base speed based on size
-                const sizeRatio = (this.size - MIN_FISH_SIZE) / (MAX_FISH_SIZE - MIN_FISH_SIZE)
                 this.baseSpeed = FISH_SPEED * (1 - sizeRatio * 0.5)
             }
             
