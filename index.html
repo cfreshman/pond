@@ -33,11 +33,11 @@
         const METERS_TO_PIXELS = radius => (radius / POND_DIAMETER) * Math.min(canvas.width, canvas.height) * 0.9
         
         // Fish parameters
-        const FISH_COUNT = 40
+        const FISH_COUNT = 100
         const BASE_FISH_LENGTH = 3 // base length in meters
         const FISH_LENGTH = METERS_TO_PIXELS(BASE_FISH_LENGTH)
-        const MIN_FISH_SIZE = FISH_LENGTH * 0.5
-        const MAX_FISH_SIZE = FISH_LENGTH * 2.0
+        const MIN_FISH_SIZE = FISH_LENGTH * 0.3  // Much smaller minimum
+        const MAX_FISH_SIZE = FISH_LENGTH * 2.0  // Much larger maximum
         const BASE_SPEED = 0.1 // meters per second
         const FISH_SPEED = METERS_TO_PIXELS(BASE_SPEED)
         
@@ -54,24 +54,44 @@
                 this.vel.x = (this.vel.x / mag) * FISH_SPEED
                 this.vel.y = (this.vel.y / mag) * FISH_SPEED
                 
-                // Size distribution
+                // Size distribution using exponential scaling
                 const rand = Math.random()
-                this.size = MIN_FISH_SIZE + (MAX_FISH_SIZE - MIN_FISH_SIZE) * Math.pow(rand, 1.5)
+                // Use exponential curve to heavily favor large sizes
+                const expScale = Math.exp(rand * 3) - 1  // 0 to e³-1
+                const normalizedExp = expScale / (Math.E ** 3 - 1)  // Normalize to 0-1
+                // Apply power scaling for even more large fish
+                const finalScale = Math.pow(normalizedExp, 2)
+                this.size = MIN_FISH_SIZE + (MAX_FISH_SIZE - MIN_FISH_SIZE) * finalScale
                 
                 // Swimming parameters
                 this.targetAngle = Math.atan2(this.vel.y, this.vel.x)
                 this.currentAngle = this.targetAngle
-                this.turnSpeed = 0.1 // radians per frame
-                this.maxTurnSpeed = 0.2 // max radians per frame
+                this.turnSpeed = 0.1
+                this.maxTurnSpeed = 0.2
                 
                 // Natural swimming motion
                 this.swimPhase = Math.random() * Math.PI * 2
-                this.swimFrequency = 0.05 + Math.random() * 0.02 // Slight variation between fish
-                this.speedVariation = 0.15 // 15% speed variation
+                this.swimFrequency = 0.05 + Math.random() * 0.02
+                this.speedVariation = 0.15
                 
                 // Wandering behavior
                 this.wanderAngle = Math.random() * Math.PI * 2
                 this.wanderStrength = 0.02
+                
+                // Schooling parameters
+                this.visionRadius = this.size * 5
+                this.separationRadius = this.size * 2
+                this.schoolingStrength = 0.3
+                this.separationStrength = 0.4
+                this.schoolId = 0
+                
+                // Edge avoidance cooldown
+                this.edgeCooldown = 0
+                this.maxEdgeCooldown = 60 // frames
+                
+                // Calculate base speed based on size
+                const sizeRatio = (this.size - MIN_FISH_SIZE) / (MAX_FISH_SIZE - MIN_FISH_SIZE)
+                this.baseSpeed = FISH_SPEED * (1 - sizeRatio * 0.5)
             }
             
             // Get nearest boundary point and normal
@@ -143,6 +163,131 @@
                 return { distance: minDist, normal: nearestNormal, point: nearestPoint, isVertex }
             }
             
+            updateSchooling() {
+                // Get boundary info for edge avoidance priority
+                const boundary = this.getNearestBoundary()
+                const turnDistance = this.size * 4
+                const nearBoundary = boundary.distance < turnDistance
+                
+                // Handle edge cooldown
+                if (this.edgeCooldown > 0) {
+                    // During cooldown, focus entirely on moving away from boundary
+                    const escapeAngle = Math.atan2(boundary.normal.y, boundary.normal.x)
+                    const cooldownFactor = this.edgeCooldown / this.maxEdgeCooldown
+                    
+                    // Stronger influence when cooldown is high
+                    this.targetAngle = this.currentAngle * (1 - cooldownFactor) + escapeAngle * cooldownFactor
+                    
+                    // Reduce cooldown
+                    this.edgeCooldown--
+                    return
+                }
+                
+                let nearbyFish = []
+                let tooCloseFish = []
+                
+                // Find nearby fish in same school
+                for (const other of fishes) {
+                    if (other === this || other.schoolId !== this.schoolId) continue
+                    
+                    const dx = other.pos.x - this.pos.x
+                    const dy = other.pos.y - this.pos.y
+                    const dist = Math.hypot(dx, dy)
+                    
+                    if (dist < this.visionRadius) {
+                        nearbyFish.push(other)
+                        
+                        if (dist < this.separationRadius) {
+                            tooCloseFish.push(other)
+                        }
+                    }
+                }
+                
+                // Stronger boundary avoidance
+                const boundaryFactor = nearBoundary ? 
+                    Math.pow(Math.max(0, (boundary.distance - this.size) / (turnDistance - this.size)), 2) : 1
+                
+                // Calculate center of pond influence
+                const toPondCenter = {
+                    x: canvas.width/2 - this.pos.x,
+                    y: canvas.height/2 - this.pos.y
+                }
+                const distToCenter = Math.hypot(toPondCenter.x, toPondCenter.y)
+                const pondRadius = Math.min(canvas.width, canvas.height * PERSPECTIVE) * 0.45
+                const centerBias = Math.max(0, Math.min(1, (distToCenter - pondRadius * 0.3) / (pondRadius * 0.4)))
+                const centerAngle = Math.atan2(toPondCenter.y, toPondCenter.x)
+                
+                if (nearbyFish.length > 0 && boundaryFactor > 0) {
+                    // Alignment - match average velocity of nearby fish
+                    let avgVelX = 0
+                    let avgVelY = 0
+                    for (const fish of nearbyFish) {
+                        avgVelX += Math.cos(fish.currentAngle)
+                        avgVelY += Math.sin(fish.currentAngle)
+                    }
+                    const avgAngle = Math.atan2(avgVelY, avgVelX)
+                    
+                    // Cohesion - move toward center of nearby fish
+                    let centerX = 0, centerY = 0
+                    for (const fish of nearbyFish) {
+                        centerX += fish.pos.x
+                        centerY += fish.pos.y
+                    }
+                    centerX /= nearbyFish.length
+                    centerY /= nearbyFish.length
+                    
+                    const towardsCenterAngle = Math.atan2(
+                        centerY - this.pos.y,
+                        centerX - this.pos.x
+                    )
+                    
+                    // Blend schooling influences with boundary factor
+                    const schoolInfluence = this.schoolingStrength * 
+                        (1 - (this.size - MIN_FISH_SIZE) / (MAX_FISH_SIZE - MIN_FISH_SIZE)) * 
+                        boundaryFactor
+                    
+                    // Combine angles with proper weighting
+                    let targetX = Math.cos(this.targetAngle) * (1 - schoolInfluence) +
+                        (Math.cos(avgAngle) * 0.5 + Math.cos(towardsCenterAngle) * 0.3 + Math.cos(centerAngle) * centerBias * 0.2) * schoolInfluence
+                    
+                    let targetY = Math.sin(this.targetAngle) * (1 - schoolInfluence) +
+                        (Math.sin(avgAngle) * 0.5 + Math.sin(towardsCenterAngle) * 0.3 + Math.sin(centerAngle) * centerBias * 0.2) * schoolInfluence
+                    
+                    this.targetAngle = Math.atan2(targetY, targetX)
+                } else if (centerBias > 0.5) {
+                    // When alone and far from center, gently bias towards center
+                    const centerInfluence = centerBias * 0.1
+                    this.targetAngle = this.targetAngle * (1 - centerInfluence) + centerAngle * centerInfluence
+                }
+                
+                // Separation - avoid too close fish
+                if (tooCloseFish.length > 0) {
+                    let avoidX = 0
+                    let avoidY = 0
+                    for (const fish of tooCloseFish) {
+                        const dx = this.pos.x - fish.pos.x
+                        const dy = this.pos.y - fish.pos.y
+                        const dist = Math.hypot(dx, dy)
+                        const weight = Math.pow(1 - (dist / this.separationRadius), 2)
+                        avoidX += (dx / dist) * weight
+                        avoidY += (dy / dist) * weight
+                    }
+                    const avoidanceAngle = Math.atan2(avoidY, avoidX)
+                    
+                    const separationInfluence = this.separationStrength * 
+                        Math.min(1, tooCloseFish.length * 0.5) *
+                        boundaryFactor
+                    
+                    // Blend separation using vector addition
+                    let targetX = Math.cos(this.targetAngle) * (1 - separationInfluence) +
+                        Math.cos(avoidanceAngle) * separationInfluence
+                    let targetY = Math.sin(this.targetAngle) * (1 - separationInfluence) +
+                        Math.sin(avoidanceAngle) * separationInfluence
+                    
+                    this.targetAngle = Math.atan2(targetY, targetX)
+                }
+            }
+            
             updateSwimming() {
                 // Update swimming phase
                 this.swimPhase += this.swimFrequency
@@ -155,13 +300,16 @@
                 const wanderX = Math.cos(this.wanderAngle) * this.wanderStrength
                 const wanderY = Math.sin(this.wanderAngle) * this.wanderStrength
                 
+                // Update schooling behavior
+                this.updateSchooling()
+                
                 // Smoothly turn towards target angle
                 const angleDiff = ((this.targetAngle - this.currentAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI
                 const turn = Math.max(-this.maxTurnSpeed, Math.min(this.maxTurnSpeed, angleDiff * this.turnSpeed))
                 this.currentAngle += turn
                 
                 // Update velocity based on current angle and speed
-                const speed = FISH_SPEED * speedFactor
+                const speed = this.baseSpeed * speedFactor
                 this.vel.x = Math.cos(this.currentAngle) * speed + wanderX
                 this.vel.y = Math.sin(this.currentAngle) * speed + wanderY
             }
@@ -197,7 +345,7 @@
                     this.maxTurnSpeed = 0.2
                 }
                 
-                // Still check for actual collisions as safety
+                // Check for actual collisions
                 if (boundary.distance < this.size) {
                     // Move back to old position
                     this.pos = oldPos
@@ -212,6 +360,12 @@
                     const safetyMargin = 1.01
                     this.pos.x = oldBoundary.point.x + oldBoundary.normal.x * (this.size * safetyMargin)
                     this.pos.y = oldBoundary.point.y + oldBoundary.normal.y * (this.size * safetyMargin)
+                    
+                    // Trigger edge cooldown
+                    this.edgeCooldown = this.maxEdgeCooldown
+                    
+                    // Add slight random variation to escape angle to prevent oscillation
+                    this.targetAngle += (Math.random() - 0.5) * 0.2
                 }
             }
             
@@ -246,24 +400,44 @@
         }
 
         function createFishes() {
-            fishes = Array.from({ length: FISH_COUNT }, () => {
-                let x, y, fish
+            const SCHOOLS = 3
+            fishes = []
+            
+            // Create fish for each school in different areas
+            for (let schoolId = 0; schoolId < SCHOOLS; schoolId++) {
+                const fishPerSchool = Math.floor(FISH_COUNT / SCHOOLS)
+                const startAngle = (schoolId / SCHOOLS) * Math.PI * 2
+                const angleSpread = (Math.PI * 2) / SCHOOLS * 0.5
                 
-                do {
-                    const angle = Math.random() * Math.PI * 2
-                    const pondRadius = Math.min(canvas.width, canvas.height * PERSPECTIVE) * 0.45
-                    const minRadius = pondRadius * 0.2
-                    const maxRadius = pondRadius * 0.7
-                    const r = minRadius + Math.random() * (maxRadius - minRadius)
+                for (let i = 0; i < fishPerSchool; i++) {
+                    let x, y, fish
                     
-                    x = canvas.width/2 + Math.cos(angle) * r
-                    y = canvas.height/2 + Math.sin(angle) * r
+                    do {
+                        const angle = startAngle + (Math.random() - 0.5) * angleSpread
+                        const pondRadius = Math.min(canvas.width, canvas.height * PERSPECTIVE) * 0.45
+                        const minRadius = pondRadius * 0.2
+                        const maxRadius = pondRadius * 0.5
+                        const r = minRadius + Math.random() * (maxRadius - minRadius)
+                        
+                        x = canvas.width/2 + Math.cos(angle) * r
+                        y = canvas.height/2 + Math.sin(angle) * r
+                        
+                        fish = new Fish(x, y)
+                        fish.schoolId = schoolId
+                        
+                        // Set initial direction towards center of school area
+                        const centerAngle = startAngle + (angleSpread / 2)
+                        fish.targetAngle = centerAngle
+                        fish.currentAngle = centerAngle
+                        const speed = fish.baseSpeed
+                        fish.vel.x = Math.cos(centerAngle) * speed
+                        fish.vel.y = Math.sin(centerAngle) * speed
+                        
+                    } while (!isInPond(x, y))
                     
-                    fish = new Fish(x, y)
-                } while (!isInPond(x, y))
-                
-                return fish
-            })
+                    fishes.push(fish)
+                }
+            }
         }
 
         function resize() {
@@ -394,6 +568,14 @@
 
         window.addEventListener('resize', resize)
         resize()
+
+        // Pre-simulate for 5 seconds (60fps * 5s = 300 frames)
+        for (let i = 0; i < 300; i++) {
+            for (const fish of fishes) {
+                fish.update()
+            }
+        }
+
         draw()
     </script>
 </body>
