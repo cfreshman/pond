@@ -4,7 +4,16 @@
     <title>pond.graphics</title>
     <style>
         body { margin: 0; background: #fff }
-        canvas { position: fixed; top: 0; left: 0 }
+        canvas { 
+            position: fixed; 
+            top: 0;
+            left: 0;
+            width: 100vw;
+            /* Make canvas taller by 1/cos(45°) so it scales to 100vh */
+            height: calc(100vh / 0.7071);
+            transform: scaleY(0.7071);
+            transform-origin: top;
+        }
     </style>
 </head>
 <body>
@@ -16,9 +25,13 @@
         // Store untransformed boundary points
         let boundaryPoints = []
 
+        // Perspective constant
+        const PERSPECTIVE = Math.cos(Math.PI/4) // cos(45°)
+
         function resize() {
+            // Match canvas dimensions to CSS size
             canvas.width = window.innerWidth
-            canvas.height = window.innerHeight
+            canvas.height = window.innerHeight / PERSPECTIVE
             
             // Update boundary points
             updateBoundary()
@@ -41,18 +54,18 @@
 
         // Update boundary points
         function updateBoundary() {
+            // Use the smaller of width or scaled height for radius
+            const radius = Math.min(
+                canvas.width,
+                canvas.height * PERSPECTIVE
+            ) * 0.45 // 90% of smaller dimension
+            
             const center = {
                 x: canvas.width / 2,
                 y: canvas.height / 2
             }
-            
-            // Calculate radius to achieve 90% width after transform
-            const transform = { a: 1, b: 0, c: -0.4, d: 0.7071, e: 0, f: 0 }
-            const targetWidth = canvas.width * 0.9
-            const transformScale = Math.sqrt(transform.a * transform.a + transform.c * transform.c)
-            const radius = (targetWidth / 2) / transformScale
 
-            // Get edge points in world space
+            // Get edge points
             boundaryPoints = getEdgePoints(radius).map(p => ({
                 x: p.x + center.x,
                 y: p.y + center.y
@@ -82,33 +95,22 @@
                 x: canvas.width / 2,
                 y: canvas.height / 2
             }
-            
-            // Save context state
-            ctx.save()
-            
-            // Move to center
-            ctx.translate(center.x, center.y)
-            
-            // Apply 45 degree perspective transform with proper 3D effect
-            const transform = { a: 1, b: 0, c: -0.4, d: 0.7071, e: 0, f: 0 }
-            ctx.transform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f)
-            
-            // Calculate radius to achieve 90% width after transform
-            // The effective width after transform is: radius * (2 * sqrt(a² + c²))
-            const targetWidth = canvas.width * 0.9
-            const transformScale = Math.sqrt(transform.a * transform.a + transform.c * transform.c)
-            const radius = (targetWidth / 2) / transformScale
+
+            // Transform points relative to center once
+            const transformedPoints = boundaryPoints.map(p => ({
+                x: p.x - center.x,
+                y: p.y - center.y
+            }))
             
             // Draw shadow
             ctx.save()
+            const shadowOffset = Math.min(canvas.width, canvas.height) * 0.005 // 0.5% of canvas size
+            ctx.translate(center.x + shadowOffset, center.y + shadowOffset)
             ctx.fillStyle = 'rgba(0,0,0,0.1)'
-            ctx.scale(1, 1.02)
-            ctx.translate(0, 4)
             ctx.beginPath()
-            const shadowPoints = getEdgePoints(radius)
-            ctx.moveTo(shadowPoints[0].x, shadowPoints[0].y)
-            for (let i = 1; i < shadowPoints.length; i++) {
-                const p = shadowPoints[i]
+            ctx.moveTo(transformedPoints[0].x, transformedPoints[0].y)
+            for (let i = 1; i < transformedPoints.length; i++) {
+                const p = transformedPoints[i]
                 ctx.lineTo(p.x, p.y)
             }
             ctx.closePath()
@@ -116,37 +118,36 @@
             ctx.restore()
             
             // Draw pond
-            ctx.fillStyle = '#e8f8f9'
+            ctx.save()
+            ctx.translate(center.x, center.y)
+            
+            // Create radial gradient for depth
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(...transformedPoints.map(p => Math.hypot(p.x, p.y))))
+            gradient.addColorStop(0, '#e8f8f9')
+            gradient.addColorStop(1, '#d4e9ea')
+            ctx.fillStyle = gradient
+            
             ctx.beginPath()
-            const pondPoints = getEdgePoints(radius)
-            ctx.moveTo(pondPoints[0].x, pondPoints[0].y)
-            for (let i = 1; i < pondPoints.length; i++) {
-                const p = pondPoints[i]
+            ctx.moveTo(transformedPoints[0].x, transformedPoints[0].y)
+            for (let i = 1; i < transformedPoints.length; i++) {
+                const p = transformedPoints[i]
                 ctx.lineTo(p.x, p.y)
             }
             ctx.closePath()
             ctx.fill()
-            
-            // Restore context
             ctx.restore()
             
-            // Draw boundary points with transform
-            ctx.save()
-            ctx.translate(center.x, center.y)
-            ctx.transform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f)
-            
+            // Draw boundary points for debugging
             ctx.strokeStyle = 'black'
             ctx.lineWidth = 2
             ctx.beginPath()
-            // Draw relative to center since we're in transformed space
-            ctx.moveTo(boundaryPoints[0].x - center.x, boundaryPoints[0].y - center.y)
+            ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y)
             for (let i = 1; i < boundaryPoints.length; i++) {
                 const p = boundaryPoints[i]
-                ctx.lineTo(p.x - center.x, p.y - center.y)
+                ctx.lineTo(p.x, p.y)
             }
             ctx.closePath()
             ctx.stroke()
-            ctx.restore()
             
             requestAnimationFrame(draw)
         }
