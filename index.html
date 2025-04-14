@@ -24,17 +24,206 @@
 
         // Store untransformed boundary points
         let boundaryPoints = []
-
+        
         // Perspective constant
         const PERSPECTIVE = Math.cos(Math.PI/4) // cos(45°)
+        
+        // Real-world scale
+        const POND_DIAMETER = 20 // meters
+        const METERS_TO_PIXELS = radius => (radius / POND_DIAMETER) * Math.min(canvas.width, canvas.height) * 0.9
+        
+        // Fish parameters
+        const FISH_COUNT = 40
+        const BASE_FISH_LENGTH = 3 // base length in meters
+        const FISH_LENGTH = METERS_TO_PIXELS(BASE_FISH_LENGTH)
+        const MIN_FISH_SIZE = FISH_LENGTH * 0.5
+        const MAX_FISH_SIZE = FISH_LENGTH * 2.0
+        const BASE_SPEED = 0.1 // meters per second
+        const FISH_SPEED = METERS_TO_PIXELS(BASE_SPEED)
+        
+        let fishes = []
+        
+        class Fish {
+            constructor(x, y) {
+                this.pos = { x, y }
+                this.vel = {
+                    x: Math.random() * 2 - 1,
+                    y: Math.random() * 2 - 1
+                }
+                const mag = Math.hypot(this.vel.x, this.vel.y)
+                this.vel.x = (this.vel.x / mag) * FISH_SPEED
+                this.vel.y = (this.vel.y / mag) * FISH_SPEED
+                
+                // Size distribution
+                const rand = Math.random()
+                this.size = MIN_FISH_SIZE + (MAX_FISH_SIZE - MIN_FISH_SIZE) * Math.pow(rand, 1.5)
+            }
+            
+            // Get nearest boundary point and normal
+            getNearestBoundary() {
+                let minDist = Infinity
+                let nearestNormal = { x: 0, y: 0 }
+                let nearestPoint = { x: 0, y: 0 }
+                let isVertex = false
+                
+                // First check vertices
+                for (let i = 0; i < boundaryPoints.length; i++) {
+                    const p = boundaryPoints[i]
+                    const dx = this.pos.x - p.x
+                    const dy = this.pos.y - p.y
+                    const dist = Math.hypot(dx, dy)
+                    
+                    if (dist < minDist) {
+                        minDist = dist
+                        // Normal points from vertex to circle center
+                        nearestNormal = {
+                            x: dx / dist,
+                            y: dy / dist
+                        }
+                        nearestPoint = p
+                        isVertex = true
+                    }
+                }
+                
+                // Then check edges
+                for (let i = 0, j = boundaryPoints.length - 1; i < boundaryPoints.length; j = i++) {
+                    const p1 = boundaryPoints[i]
+                    const p2 = boundaryPoints[j]
+                    
+                    // Edge vector
+                    const ex = p2.x - p1.x
+                    const ey = p2.y - p1.y
+                    const len = Math.hypot(ex, ey)
+                    
+                    // Vector from point to line start
+                    const px = this.pos.x - p1.x
+                    const py = this.pos.y - p1.y
+                    
+                    // Project point onto line
+                    const proj = (px * ex + py * ey) / len
+                    const t = Math.max(0, Math.min(len, proj))
+                    
+                    // Closest point on line
+                    const closestX = p1.x + (ex / len) * t
+                    const closestY = p1.y + (ey / len) * t
+                    
+                    // Distance to line
+                    const dx = this.pos.x - closestX
+                    const dy = this.pos.y - closestY
+                    const dist = Math.hypot(dx, dy)
+                    
+                    // Only use edge if it's closer than nearest vertex and point projects onto segment
+                    if (dist < minDist && t > 0 && t < len) {
+                        minDist = dist
+                        // Normal points from edge to circle center
+                        nearestNormal = {
+                            x: dx / dist,
+                            y: dy / dist
+                        }
+                        nearestPoint = { x: closestX, y: closestY }
+                        isVertex = false
+                    }
+                }
+                
+                return { distance: minDist, normal: nearestNormal, point: nearestPoint, isVertex }
+            }
+            
+            update() {
+                // Store old position
+                const oldPos = { x: this.pos.x, y: this.pos.y }
+                
+                // Update position
+                this.pos.x += this.vel.x
+                this.pos.y += this.vel.y
+                
+                // Get nearest boundary info
+                const boundary = this.getNearestBoundary()
+                
+                // Check if fish circle intersects with boundary
+                if (boundary.distance < this.size) {
+                    // Move back to old position
+                    this.pos = oldPos
+                    
+                    // Get boundary info at old position for more accurate reflection
+                    const oldBoundary = this.getNearestBoundary()
+                    
+                    // Calculate reflection
+                    const normal = oldBoundary.normal
+                    const dot = this.vel.x * normal.x + this.vel.y * normal.y
+                    
+                    // Reflect velocity (v = v - 2(v·n)n)
+                    this.vel.x = this.vel.x - 2 * dot * normal.x
+                    this.vel.y = this.vel.y - 2 * dot * normal.y
+                    
+                    // Ensure constant speed
+                    const mag = Math.hypot(this.vel.x, this.vel.y)
+                    this.vel.x = (this.vel.x / mag) * FISH_SPEED
+                    this.vel.y = (this.vel.y / mag) * FISH_SPEED
+                    
+                    // Position fish at boundary + size distance along normal
+                    const safetyMargin = 1.01 // Tiny margin to prevent sticking
+                    this.pos.x = oldBoundary.point.x + oldBoundary.normal.x * (this.size * safetyMargin)
+                    this.pos.y = oldBoundary.point.y + oldBoundary.normal.y * (this.size * safetyMargin)
+                    
+                    // Apply new velocity
+                    this.pos.x += this.vel.x
+                    this.pos.y += this.vel.y
+                }
+            }
+            
+            draw(ctx) {
+                ctx.save()
+                ctx.translate(this.pos.x, this.pos.y)
+                ctx.rotate(Math.atan2(this.vel.y, this.vel.x))
+                
+                // Draw single teardrop shape
+                ctx.fillStyle = '#000'
+                ctx.beginPath()
+                ctx.moveTo(-this.size, 0)
+                
+                // Teardrop curve (reversed)
+                ctx.quadraticCurveTo(
+                    this.size * 0.5, this.size * 0.5,
+                    this.size, 0
+                )
+                ctx.quadraticCurveTo(
+                    this.size * 0.5, -this.size * 0.5,
+                    -this.size, 0
+                )
+                
+                ctx.closePath()
+                ctx.fill()
+                
+                ctx.restore()
+            }
+        }
+
+        function createFishes() {
+            fishes = Array.from({ length: FISH_COUNT }, () => {
+                let x, y, fish
+                
+                do {
+                    const angle = Math.random() * Math.PI * 2
+                    const pondRadius = Math.min(canvas.width, canvas.height * PERSPECTIVE) * 0.45
+                    const minRadius = pondRadius * 0.2
+                    const maxRadius = pondRadius * 0.7
+                    const r = minRadius + Math.random() * (maxRadius - minRadius)
+                    
+                    x = canvas.width/2 + Math.cos(angle) * r
+                    y = canvas.height/2 + Math.sin(angle) * r
+                    
+                    fish = new Fish(x, y)
+                } while (!isInPond(x, y))
+                
+                return fish
+            })
+        }
 
         function resize() {
-            // Match canvas dimensions to CSS size
             canvas.width = window.innerWidth
             canvas.height = window.innerHeight / PERSPECTIVE
-            
-            // Update boundary points
             updateBoundary()
+            createFishes()
         }
 
         // Create natural edge variations
@@ -52,27 +241,23 @@
             return points
         }
 
-        // Update boundary points
         function updateBoundary() {
-            // Use the smaller of width or scaled height for radius
             const radius = Math.min(
                 canvas.width,
                 canvas.height * PERSPECTIVE
-            ) * 0.45 // 90% of smaller dimension
+            ) * 0.45
             
             const center = {
                 x: canvas.width / 2,
                 y: canvas.height / 2
             }
 
-            // Get edge points
             boundaryPoints = getEdgePoints(radius).map(p => ({
                 x: p.x + center.x,
                 y: p.y + center.y
             }))
         }
 
-        // Helper to check if a point is inside the boundary polygon
         function isInPond(x, y) {
             let inside = false
             for (let i = 0, j = boundaryPoints.length - 1; i < boundaryPoints.length; j = i++) {
@@ -104,24 +289,21 @@
             
             // Draw shadow
             ctx.save()
-            const shadowOffset = Math.min(canvas.width, canvas.height) * 0.005 // 0.5% of canvas size
+            const shadowOffset = Math.min(canvas.width, canvas.height) * 0.005
             ctx.translate(center.x + shadowOffset, center.y + shadowOffset)
             ctx.fillStyle = 'rgba(0,0,0,0.1)'
             ctx.beginPath()
             ctx.moveTo(transformedPoints[0].x, transformedPoints[0].y)
             for (let i = 1; i < transformedPoints.length; i++) {
-                const p = transformedPoints[i]
-                ctx.lineTo(p.x, p.y)
+                ctx.lineTo(transformedPoints[i].x, transformedPoints[i].y)
             }
             ctx.closePath()
             ctx.fill()
             ctx.restore()
             
-            // Draw pond
+            // Draw base pond
             ctx.save()
             ctx.translate(center.x, center.y)
-            
-            // Create radial gradient for depth
             const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(...transformedPoints.map(p => Math.hypot(p.x, p.y))))
             gradient.addColorStop(0, '#e8f8f9')
             gradient.addColorStop(1, '#d4e9ea')
@@ -130,24 +312,35 @@
             ctx.beginPath()
             ctx.moveTo(transformedPoints[0].x, transformedPoints[0].y)
             for (let i = 1; i < transformedPoints.length; i++) {
-                const p = transformedPoints[i]
-                ctx.lineTo(p.x, p.y)
+                ctx.lineTo(transformedPoints[i].x, transformedPoints[i].y)
             }
             ctx.closePath()
             ctx.fill()
             ctx.restore()
             
-            // Draw boundary points for debugging
-            ctx.strokeStyle = 'black'
-            ctx.lineWidth = 2
+            // Update and draw fish
+            for (const fish of fishes) {
+                fish.update()
+                fish.draw(ctx)
+            }
+            
+            // Draw pond overlay
+            ctx.save()
+            ctx.translate(center.x, center.y)
+            ctx.fillStyle = 'rgba(232,248,249,0.9)'
             ctx.beginPath()
-            ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y)
-            for (let i = 1; i < boundaryPoints.length; i++) {
-                const p = boundaryPoints[i]
-                ctx.lineTo(p.x, p.y)
+            ctx.moveTo(transformedPoints[0].x, transformedPoints[0].y)
+            for (let i = 1; i < transformedPoints.length; i++) {
+                ctx.lineTo(transformedPoints[i].x, transformedPoints[i].y)
             }
             ctx.closePath()
+            ctx.fill()
+            
+            // Draw pond edge
+            ctx.strokeStyle = '#000'
+            ctx.lineWidth = 2
             ctx.stroke()
+            ctx.restore()
             
             requestAnimationFrame(draw)
         }
