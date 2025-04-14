@@ -564,7 +564,12 @@
             // Draw pond overlay
             ctx.save()
             ctx.translate(center.x, center.y)
-            ctx.fillStyle = 'rgba(232,248,249,0.9)'
+            ctx.globalAlpha = 0.9
+            const overlayGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(...transformedPoints.map(p => Math.hypot(p.x, p.y))))
+            overlayGradient.addColorStop(0, '#e8f8f9')
+            overlayGradient.addColorStop(1, '#d4e9ea')
+            ctx.fillStyle = overlayGradient
+            
             ctx.beginPath()
             ctx.moveTo(transformedPoints[0].x, transformedPoints[0].y)
             for (let i = 1; i < transformedPoints.length; i++) {
