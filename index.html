@@ -32,6 +32,9 @@
         const POND_DIAMETER = 20 // meters
         const METERS_TO_PIXELS = radius => (radius / POND_DIAMETER) * Math.min(canvas.width, canvas.height) * 0.9
         
+        // Physics timestep
+        const FIXED_DT = 1/60 // 60hz physics
+        
         // Fish parameters
         const FISH_COUNT = 100
         const BASE_FISH_LENGTH = 3 // base length in meters
@@ -288,24 +291,24 @@
                 }
             }
             
-            updateSwimming() {
-                // Update swimming phase
-                this.swimPhase += this.swimFrequency
+            updateSwimming(dt) {
+                // Update swimming phase (scale by dt)
+                this.swimPhase += this.swimFrequency * dt * 60 // Keep same frequency at 60hz
                 
                 // Calculate speed variation based on swimming motion
                 const speedFactor = 1 + Math.sin(this.swimPhase) * this.speedVariation
                 
-                // Update wandering
-                this.wanderAngle += (Math.random() - 0.5) * 0.1
+                // Update wandering (scale by dt)
+                this.wanderAngle += (Math.random() - 0.5) * 0.1 * dt * 60
                 const wanderX = Math.cos(this.wanderAngle) * this.wanderStrength
                 const wanderY = Math.sin(this.wanderAngle) * this.wanderStrength
                 
                 // Update schooling behavior
                 this.updateSchooling()
                 
-                // Smoothly turn towards target angle
+                // Smoothly turn towards target angle (scale by dt)
                 const angleDiff = ((this.targetAngle - this.currentAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI
-                const turn = Math.max(-this.maxTurnSpeed, Math.min(this.maxTurnSpeed, angleDiff * this.turnSpeed))
+                const turn = Math.max(-this.maxTurnSpeed, Math.min(this.maxTurnSpeed, angleDiff * this.turnSpeed)) * dt * 60
                 this.currentAngle += turn
                 
                 // Update velocity based on current angle and speed
@@ -314,16 +317,16 @@
                 this.vel.y = Math.sin(this.currentAngle) * speed + wanderY
             }
             
-            update() {
+            update(dt) {
                 // Store old position
                 const oldPos = { x: this.pos.x, y: this.pos.y }
                 
                 // Update swimming motion
-                this.updateSwimming()
+                this.updateSwimming(dt)
                 
-                // Update position
-                this.pos.x += this.vel.x
-                this.pos.y += this.vel.y
+                // Update position (scale by dt)
+                this.pos.x += this.vel.x * dt * 60
+                this.pos.y += this.vel.y * dt * 60
                 
                 // Get nearest boundary info
                 const boundary = this.getNearestBoundary()
@@ -366,6 +369,11 @@
                     
                     // Add slight random variation to escape angle to prevent oscillation
                     this.targetAngle += (Math.random() - 0.5) * 0.2
+                }
+                
+                // Update edge cooldown (scale by dt)
+                if (this.edgeCooldown > 0) {
+                    this.edgeCooldown = Math.max(0, this.edgeCooldown - dt * 60)
                 }
             }
             
@@ -493,6 +501,10 @@
         }
 
         function draw() {
+            const currentTime = performance.now() / 1000
+            const dt = Math.min(currentTime - lastTime, 1/30) // Cap dt at 1/30 to prevent spiral of death
+            lastTime = currentTime
+            
             // Clear canvas
             ctx.fillStyle = '#fff'
             ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -541,7 +553,7 @@
             
             // Update and draw fish
             for (const fish of fishes) {
-                fish.update()
+                fish.update(dt)
                 fish.draw(ctx)
             }
             
@@ -569,13 +581,18 @@
         window.addEventListener('resize', resize)
         resize()
 
-        // Pre-simulate for 5 seconds (60fps * 5s = 300 frames)
-        for (let i = 0; i < 300; i++) {
+        // Pre-simulate for exactly 5 seconds using fixed timestep
+        let time = 0
+        while (time < 5) {
             for (const fish of fishes) {
-                fish.update()
+                fish.update(FIXED_DT)
             }
+            time += FIXED_DT
         }
 
+        // Track time for main simulation
+        let lastTime = performance.now() / 1000
+        
         draw()
     </script>
 </body>
